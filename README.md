@@ -1,0 +1,30 @@
+# Token Embeddings KNN Explorer
+
+Interactive tool for exploring K-nearest-neighbor relationships in LLM token embeddings. Search for a token, see its nearest neighbors by cosine similarity, and click through to explore.
+
+Live at [token-embeddings-knn.pages.dev](https://token-embeddings-knn.pages.dev/)
+
+## Models
+
+- Qwen3-30B-A3B (input + output embeddings)
+- Llama 3.1-8B (input + output embeddings)
+- Gemma 3-4B (input embeddings only — tied weights)
+
+## Development
+
+```bash
+bun run dev       # Start Vite dev server
+bun run build     # Type-check then bundle
+bun run deploy    # Build and deploy to Cloudflare Pages
+```
+
+## Generating data
+
+KNN data is precomputed with FAISS and stored as gzipped JSON in `public/data/` (gitignored due to size). To regenerate:
+
+```bash
+cd build_data
+python compute_knn.py
+```
+
+Requires a GPU.
