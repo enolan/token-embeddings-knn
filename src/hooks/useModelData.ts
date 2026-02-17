@@ -3,15 +3,28 @@ import type { ModelData, SearchResult, TokenEntry } from "../types";
 
 export type EmbeddingType = "input" | "output";
 
-const MODEL_FILES: Record<string, Record<EmbeddingType, string>> = {
+const MODEL_FILES: Record<string, Partial<Record<EmbeddingType, string>>> = {
   "qwen3-30b-a3b": {
     input: "/data/qwen3-30b-a3b-input.json.gz",
     output: "/data/qwen3-30b-a3b-output.json.gz",
+  },
+  "llama-3.1-8b": {
+    input: "/data/llama-3.1-8b-input.json.gz",
+    output: "/data/llama-3.1-8b-output.json.gz",
+  },
+  "gemma-3-4b": {
+    input: "/data/gemma-3-4b-input.json.gz",
   },
 };
 
 export function availableModels(): string[] {
   return Object.keys(MODEL_FILES);
+}
+
+export function availableEmbeddingTypes(modelId: string): EmbeddingType[] {
+  const files = MODEL_FILES[modelId];
+  if (!files) return ["input"];
+  return (Object.keys(files) as EmbeddingType[]);
 }
 
 interface UseModelDataReturn {
@@ -46,6 +59,11 @@ export function useModelData(
       return;
     }
     const url = files[embeddingType];
+    if (!url) {
+      setError(`${modelId} does not have ${embeddingType} embeddings (tied weights)`);
+      setLoading(false);
+      return;
+    }
 
     (async () => {
       try {

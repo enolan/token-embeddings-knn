@@ -165,6 +165,18 @@ header h1 {
   color: #fff;
 }
 
+.embedding-toggle.tied {
+  padding: 0.35rem 0.8rem;
+}
+
+.tied-label {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* ── Legend ───────────────────────────────────────────────────── */
 
 .legend-wrapper {

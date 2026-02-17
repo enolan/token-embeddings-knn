@@ -6,6 +6,7 @@ import { NeighborResults } from "./components/NeighborResults";
 import {
   useModelData,
   availableModels,
+  availableEmbeddingTypes,
   type EmbeddingType,
 } from "./hooks/useModelData";
 import "./App.css";
@@ -90,6 +91,8 @@ export function App() {
   const handleModelChange = useCallback((id: string) => {
     setModelId(id);
     setSelectedToken(null);
+    const types = availableEmbeddingTypes(id);
+    setEmbeddingType((prev) => (types.includes(prev) ? prev : types[0]));
   }, []);
 
   const token = selectedToken !== null ? getToken(selectedToken) : undefined;
@@ -100,7 +103,7 @@ export function App() {
         <h1>Token Embeddings KNN Explorer</h1>
         <div className="header-controls">
           <ModelSelector value={modelId} onChange={handleModelChange} />
-          <EmbeddingToggle value={embeddingType} onChange={setEmbeddingType} />
+          <EmbeddingToggle value={embeddingType} onChange={setEmbeddingType} availableTypes={availableEmbeddingTypes(modelId)} />
           <div className="legend-wrapper" ref={legendRef}>
             <button
               className="legend-button"

@@ -13,23 +13,57 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 
-TENSOR_NAMES = {
-    "input": "model.embed_tokens.weight",
-    "output": "lm_head.weight",
+INPUT_TENSOR_CANDIDATES = [
+    "model.embed_tokens.weight",
+    "language_model.model.embed_tokens.weight",
+]
+
+OUTPUT_TENSOR_CANDIDATES = [
+    "lm_head.weight",
+    "language_model.lm_head.weight",
+]
+
+TENSOR_CANDIDATES = {
+    "input": INPUT_TENSOR_CANDIDATES,
+    "output": OUTPUT_TENSOR_CANDIDATES,
 }
 
 
-def load_embedding_weight(model_id: str, tensor_name: str) -> np.ndarray:
-    """Load only a single tensor from a safetensors model."""
-    index_path = hf_hub_download(model_id, "model.safetensors.index.json")
-    with open(index_path) as f:
-        index = json.load(f)
+def _resolve_tensor_name(available_names: list[str], candidates: list[str], label: str) -> str:
+    """Find the first matching tensor name from candidates."""
+    for candidate in candidates:
+        if candidate in available_names:
+            return candidate
+    embed_head = [k for k in available_names if "embed" in k.lower() or "head" in k.lower()]
+    raise KeyError(
+        f"No known {label} tensor found. Tried: {candidates}. "
+        f"Available tensors containing 'embed' or 'head': {embed_head}"
+    )
 
-    shard_file = index["weight_map"][tensor_name]
-    print(f"  {tensor_name} is in shard: {shard_file}")
 
-    shard_path = hf_hub_download(model_id, shard_file)
+def load_embedding_weight(model_id: str, candidates: list[str], label: str) -> np.ndarray:
+    """Load only a single tensor from a safetensors model (sharded or single-file)."""
+    try:
+        # Try sharded model first
+        index_path = hf_hub_download(model_id, "model.safetensors.index.json")
+        with open(index_path) as f:
+            index = json.load(f)
 
+        tensor_name = _resolve_tensor_name(list(index["weight_map"].keys()), candidates, label)
+        shard_file = index["weight_map"][tensor_name]
+        print(f"  {tensor_name} is in shard: {shard_file}")
+        shard_path = hf_hub_download(model_id, shard_file)
+    except Exception as e:
+        if "model.safetensors.index.json" in str(e) or "EntryNotFoundError" in type(e).__name__:
+            # Single-file model
+            print(f"  No shard index found, trying single-file model.safetensors...")
+            shard_path = hf_hub_download(model_id, "model.safetensors")
+            with safe_open(shard_path, framework="pt") as f:
+                tensor_name = _resolve_tensor_name(list(f.keys()), candidates, label)
+        else:
+            raise
+
+    print(f"  Loading tensor: {tensor_name}")
     # Use torch framework since the weights are bfloat16 (unsupported by numpy).
     with safe_open(shard_path, framework="pt") as f:
         embeddings = f.get_tensor(tensor_name)
@@ -132,11 +166,35 @@ def main():
         help="Which embeddings to compute (default: both)",
     )
     parser.add_argument("--k", type=int, default=10, help="Number of nearest neighbors")
+    parser.add_argument(
+        "--input-tensor",
+        type=str,
+        default=None,
+        help="Override tensor name for input embeddings (default: model.embed_tokens.weight)",
+    )
+    parser.add_argument(
+        "--output-tensor",
+        type=str,
+        default=None,
+        help="Override tensor name for output embeddings (default: lm_head.weight)",
+    )
+    parser.add_argument(
+        "--slug",
+        type=str,
+        default=None,
+        help="Override output filename slug (default: lowercased model name)",
+    )
     args = parser.parse_args()
 
     model_name = args.model.split("/")[-1]
-    slug = model_name.lower()
+    slug = args.slug or model_name.lower()
     os.makedirs(args.output_dir, exist_ok=True)
+
+    tensor_overrides = {}
+    if args.input_tensor:
+        tensor_overrides["input"] = [args.input_tensor]
+    if args.output_tensor:
+        tensor_overrides["output"] = [args.output_tensor]
 
     print(f"Loading tokenizer for {args.model}...")
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -144,13 +202,13 @@ def main():
     types = ["input", "output"] if args.embedding == "both" else [args.embedding]
 
     for emb_type in types:
-        tensor_name = TENSOR_NAMES[emb_type]
+        candidates = tensor_overrides.get(emb_type, TENSOR_CANDIDATES[emb_type])
         print(f"\n{'='*60}")
-        print(f"Processing {emb_type} embeddings ({tensor_name})")
+        print(f"Processing {emb_type} embeddings")
         print(f"{'='*60}")
 
         print(f"Loading {emb_type} embedding weights...")
-        embeddings = load_embedding_weight(args.model, tensor_name)
+        embeddings = load_embedding_weight(args.model, candidates, emb_type)
         print(f"Embedding matrix shape: {embeddings.shape}")
 
         output_path = os.path.join(args.output_dir, f"{slug}-{emb_type}.json.gz")
