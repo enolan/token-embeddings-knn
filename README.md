@@ -24,7 +24,7 @@ KNN data is precomputed with FAISS and stored as gzipped JSON in `public/data/` 
 
 ```bash
 cd build_data
-python compute_knn.py
+uv run compute_knn.py
 ```
 
 Requires a GPU.
