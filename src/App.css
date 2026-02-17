@@ -496,6 +496,27 @@ header h1 {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Footer ─────────────────────────────────────────────────── */
+
+.site-footer {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.site-footer a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.site-footer a:hover {
+  color: var(--accent-active);
+}
+
 /* ── Responsive ──────────────────────────────────────────────── */
 
 @media (max-width: 480px) {

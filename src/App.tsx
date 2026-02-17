@@ -157,6 +157,10 @@ export function App() {
           )}
         </>
       )}
+
+      <footer className="site-footer">
+        Made by Claude and <a href="https://x.com/enolan" target="_blank" rel="noopener noreferrer">Echo Nolan</a>
+      </footer>
     </div>
   );
 }
