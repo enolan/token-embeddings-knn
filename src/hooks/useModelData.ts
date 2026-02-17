@@ -42,8 +42,8 @@ export function useModelData(
   const [data, setData] = useState<ModelData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Index: lowercase token string → token id, built once on load
-  const searchIndex = useRef<Map<string, number>>(new Map());
+  // Index: lowercase token string → token ids, built once on load
+  const searchIndex = useRef<Map<string, number[]>>(new Map());
 
   useEffect(() => {
     let cancelled = false;
@@ -108,9 +108,15 @@ export function useModelData(
         const parsed: ModelData = JSON.parse(json);
 
         // Build search index
-        const idx = new Map<string, number>();
+        const idx = new Map<string, number[]>();
         for (const [idStr, entry] of Object.entries(parsed.tokens)) {
-          idx.set(entry.s.toLowerCase(), Number(idStr));
+          const key = entry.s.toLowerCase();
+          const ids = idx.get(key);
+          if (ids) {
+            ids.push(Number(idStr));
+          } else {
+            idx.set(key, [Number(idStr)]);
+          }
         }
 
         if (cancelled) return;
@@ -146,12 +152,14 @@ export function useModelData(
       }
 
       // Search by token string
-      for (const [tokenStr, tokenId] of searchIndex.current) {
+      for (const [tokenStr, tokenIds] of searchIndex.current) {
         if (results.length >= limit) break;
         if (tokenStr.includes(lower)) {
-          // Avoid duplicate if we already added via numeric match
-          if (!results.some((r) => r.id === tokenId)) {
-            results.push({ id: tokenId, text: data.tokens[String(tokenId)].s });
+          for (const tokenId of tokenIds) {
+            if (results.length >= limit) break;
+            if (!results.some((r) => r.id === tokenId)) {
+              results.push({ id: tokenId, text: data.tokens[String(tokenId)].s });
+            }
           }
         }
       }
