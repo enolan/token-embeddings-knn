@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ModelSelector } from "./components/ModelSelector";
 import { EmbeddingToggle } from "./components/EmbeddingToggle";
 import { TokenSearch } from "./components/TokenSearch";
@@ -38,6 +38,9 @@ export function App() {
   const [selectedToken, setSelectedToken] = useState<number | null>(
     initial.token
   );
+  const [showLegend, setShowLegend] = useState(false);
+  const legendRef = useRef<HTMLDivElement>(null);
+
   const { data, loading, error, search, getToken } = useModelData(
     modelId,
     embeddingType
@@ -65,6 +68,18 @@ export function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  // Close legend on outside click
+  useEffect(() => {
+    if (!showLegend) return;
+    function handleClick(e: MouseEvent) {
+      if (legendRef.current && !legendRef.current.contains(e.target as Node)) {
+        setShowLegend(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showLegend]);
+
   const navigate = useCallback((tokenId: number) => {
     const params = new URLSearchParams(window.location.search);
     params.set("token", String(tokenId));
@@ -86,17 +101,44 @@ export function App() {
         <div className="header-controls">
           <ModelSelector value={modelId} onChange={handleModelChange} />
           <EmbeddingToggle value={embeddingType} onChange={setEmbeddingType} />
+          <div className="legend-wrapper" ref={legendRef}>
+            <button
+              className="legend-button"
+              onClick={() => setShowLegend((v) => !v)}
+              title="Symbol legend"
+            >
+              ?
+            </button>
+            {showLegend && (
+              <div className="legend-popover">
+                <span>
+                  <span className="token-text">{"\u00B7"}</span> space
+                </span>
+                <span>
+                  <span className="token-text">{"\u21B5"}</span> newline
+                </span>
+                <span>
+                  <span className="token-text">{"\u21E5"}</span> tab
+                </span>
+                <span>
+                  <span className="token-text">{"\u2581"}</span> word boundary
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      <div className="legend">
-        <span><span className="token-text">{"\u00B7"}</span> space</span>
-        <span><span className="token-text">{"\u21B5"}</span> newline</span>
-        <span><span className="token-text">{"\u21E5"}</span> tab</span>
-        <span><span className="token-text">{"\u2581"}</span> word boundary (tokenizer)</span>
-      </div>
-
-      {loading && <div className="status">Loading model data...</div>}
+      {loading && (
+        <div className="loading-skeleton">
+          <div className="skeleton-bar skeleton-search" />
+          <div className="skeleton-bar skeleton-row" />
+          <div className="skeleton-bar skeleton-row" />
+          <div className="skeleton-bar skeleton-row" />
+          <div className="skeleton-bar skeleton-row" />
+          <div className="skeleton-bar skeleton-row" />
+        </div>
+      )}
       {error && <div className="status error">Error: {error}</div>}
 
       {data && (

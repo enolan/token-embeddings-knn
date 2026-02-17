@@ -8,6 +8,9 @@ interface Props {
 export function EmbeddingToggle({ value, onChange }: Props) {
   return (
     <div className="embedding-toggle">
+      <span
+        className={`embedding-slider${value === "output" ? " right" : ""}`}
+      />
       <button
         className={value === "input" ? "active" : ""}
         onClick={() => onChange("input")}
