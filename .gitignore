@@ -1,0 +1,7 @@
+node_modules/
+dist/
+public/data/*.json.gz
+*.pyc
+__pycache__/
+.venv/
+.vite/
