@@ -7,8 +7,10 @@
     "deploy": "bun run build && bunx wrangler pages deploy dist/ --branch main"
   },
   "dependencies": {
+    "brotli-dec-wasm": "^2.3.1",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "vite-plugin-wasm": "^3.5.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

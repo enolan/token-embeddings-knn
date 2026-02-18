@@ -1,6 +1,7 @@
 node_modules/
 dist/
 public/data/*.json.gz
+public/data/*.json.br
 *.pyc
 __pycache__/
 .venv/

@@ -1,19 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import brotliPromise from "brotli-dec-wasm";
 import type { ModelData, SearchResult, TokenEntry } from "../types";
 
 export type EmbeddingType = "input" | "output";
 
 const MODEL_FILES: Record<string, Partial<Record<EmbeddingType, string>>> = {
   "qwen3-30b-a3b": {
-    input: "/data/qwen3-30b-a3b-input.json.gz",
-    output: "/data/qwen3-30b-a3b-output.json.gz",
+    input: "/data/qwen3-30b-a3b-input.json.br",
+    output: "/data/qwen3-30b-a3b-output.json.br",
   },
   "llama-3.1-8b": {
-    input: "/data/llama-3.1-8b-input.json.gz",
-    output: "/data/llama-3.1-8b-output.json.gz",
+    input: "/data/llama-3.1-8b-input.json.br",
+    output: "/data/llama-3.1-8b-output.json.br",
   },
   "gemma-3-4b": {
-    input: "/data/gemma-3-4b-input.json.gz",
+    input: "/data/gemma-3-4b-input.json.br",
   },
 };
 
@@ -67,44 +68,18 @@ export function useModelData(
 
     (async () => {
       try {
-        const resp = await fetch(url);
+        const [resp, brotli] = await Promise.all([fetch(url), brotliPromise]);
         if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
 
-        // Try to decompress gzip. The browser may do it automatically via
-        // Content-Encoding, or we may need to do it manually.
-        let json: string;
-        const contentType = resp.headers.get("content-type") || "";
-        if (
-          contentType.includes("application/json") ||
-          contentType.includes("text/")
-        ) {
-          // Browser already decompressed it
-          json = await resp.text();
-        } else {
-          // Manually decompress
-          const buf = await resp.arrayBuffer();
-          const ds = new DecompressionStream("gzip");
-          const writer = ds.writable.getWriter();
-          writer.write(new Uint8Array(buf));
-          writer.close();
-          const reader = ds.readable.getReader();
-          const chunks: Uint8Array[] = [];
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-          }
-          const totalLength = chunks.reduce((s, c) => s + c.length, 0);
-          const merged = new Uint8Array(totalLength);
-          let offset = 0;
-          for (const chunk of chunks) {
-            merged.set(chunk, offset);
-            offset += chunk.length;
-          }
-          json = new TextDecoder().decode(merged);
-        }
-
         if (cancelled) return;
+        const bytes = new Uint8Array(await resp.arrayBuffer());
+        // If the server set Content-Encoding: br, the browser already
+        // decompressed and we have raw JSON (starts with '{'). Otherwise
+        // we have raw brotli bytes that need manual decompression.
+        const json =
+          bytes[0] === 0x7b
+            ? new TextDecoder().decode(bytes)
+            : new TextDecoder().decode(brotli.decompress(bytes));
         const parsed: ModelData = JSON.parse(json);
 
         // Build search index
