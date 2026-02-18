@@ -1,10 +1,10 @@
 """Compute k-nearest neighbors for all tokens in a model's embedding space."""
 
 import argparse
-import gzip
 import json
 import os
 
+import brotli
 import faiss
 import numpy as np
 from huggingface_hub import hf_hub_download
@@ -71,13 +71,23 @@ def load_embedding_weight(model_id: str, candidates: list[str], label: str) -> n
     return embeddings.float().numpy()
 
 
+def _write_brotli(path: str, data: bytes, quality: int = 9) -> int:
+    """Write brotli-compressed data and return compressed size."""
+    compressed = brotli.compress(data, quality=quality)
+    with open(path, "wb") as f:
+        f.write(compressed)
+    return len(compressed)
+
+
 def compute_and_write(
     embeddings: np.ndarray,
     tokenizer: "AutoTokenizer",
     model_name: str,
     embedding_type: str,
     k: int,
-    output_path: str,
+    output_dir: str,
+    prefix: str,
+    shard_size: int,
 ):
     vocab_size, dim = embeddings.shape
 
@@ -110,11 +120,16 @@ def compute_and_write(
 
     del embeddings_normalized, index, cpu_index
 
-    # Build output data
-    print("Building output data...")
-    tokens = {}
-    for token_id in tqdm(range(vocab_size), desc="Formatting"):
-        token_str = tokenizer.decode([token_id])
+    # Build token strings array
+    print("Building token strings...")
+    token_strings = []
+    for token_id in tqdm(range(vocab_size), desc="Decoding tokens"):
+        token_strings.append(tokenizer.decode([token_id]))
+
+    # Build KNN neighbor lists
+    print("Building neighbor lists...")
+    all_neighbors = []
+    for token_id in tqdm(range(vocab_size), desc="Formatting neighbors"):
         neighbors = []
         for j in range(k_query):
             neighbor_id = int(all_indices[token_id, j])
@@ -124,22 +139,41 @@ def compute_and_write(
             neighbors.append([neighbor_id, round(sim, 4)])
             if len(neighbors) == k:
                 break
-        tokens[str(token_id)] = {"s": token_str, "n": neighbors}
+        all_neighbors.append(neighbors)
 
-    data = {
+    del all_similarities, all_indices
+
+    num_shards = (vocab_size + shard_size - 1) // shard_size
+
+    # 1. Write manifest
+    manifest = {
         "model": model_name,
-        "embedding": embedding_type,
         "k": k,
         "metric": "cosine_similarity",
-        "tokens": tokens,
+        "vocabSize": vocab_size,
+        "shardSize": shard_size,
+        "numShards": num_shards,
     }
+    manifest_path = os.path.join(output_dir, f"{prefix}-manifest.json")
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f)
+    print(f"  Manifest: {os.path.getsize(manifest_path)} bytes -> {manifest_path}")
 
-    print(f"Writing output to {output_path}...")
-    json_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    print(f"  JSON size: {len(json_bytes) / 1024 / 1024:.1f} MB")
-    with gzip.open(output_path, "wb", compresslevel=9) as f:
-        f.write(json_bytes)
-    print(f"  Gzipped size: {os.path.getsize(output_path) / 1024 / 1024:.1f} MB")
+    # 2. Write tokens file (brotli-compressed)
+    tokens_path = os.path.join(output_dir, f"{prefix}-tokens.json.br")
+    tokens_json = json.dumps(token_strings, ensure_ascii=False).encode("utf-8")
+    tokens_compressed = _write_brotli(tokens_path, tokens_json)
+    print(f"  Tokens: {len(tokens_json) / 1024 / 1024:.1f} MB JSON -> {tokens_compressed / 1024 / 1024:.1f} MB brotli -> {tokens_path}")
+
+    # 3. Write KNN shards (brotli-compressed)
+    for shard_idx in range(num_shards):
+        start = shard_idx * shard_size
+        end = min(start + shard_size, vocab_size)
+        shard_data = all_neighbors[start:end]
+        shard_path = os.path.join(output_dir, f"{prefix}-knn-{shard_idx}.json.br")
+        shard_json = json.dumps(shard_data).encode("utf-8")
+        shard_compressed = _write_brotli(shard_path, shard_json)
+        print(f"  Shard {shard_idx}: tokens {start}-{end-1}, {len(shard_json) / 1024 / 1024:.1f} MB JSON -> {shard_compressed / 1024 / 1024:.1f} MB brotli -> {shard_path}")
 
 
 def main():
@@ -156,7 +190,7 @@ def main():
         "--output-dir",
         type=str,
         required=True,
-        help="Output directory for gzipped JSON files",
+        help="Output directory for sharded data files",
     )
     parser.add_argument(
         "--embedding",
@@ -166,6 +200,12 @@ def main():
         help="Which embeddings to compute (default: both)",
     )
     parser.add_argument("--k", type=int, default=10, help="Number of nearest neighbors")
+    parser.add_argument(
+        "--shard-size",
+        type=int,
+        default=16384,
+        help="Number of tokens per KNN shard (default: 16384)",
+    )
     parser.add_argument(
         "--input-tensor",
         type=str,
@@ -211,8 +251,11 @@ def main():
         embeddings = load_embedding_weight(args.model, candidates, emb_type)
         print(f"Embedding matrix shape: {embeddings.shape}")
 
-        output_path = os.path.join(args.output_dir, f"{slug}-{emb_type}.json.gz")
-        compute_and_write(embeddings, tokenizer, model_name, emb_type, args.k, output_path)
+        prefix = f"{slug}-{emb_type}"
+        compute_and_write(
+            embeddings, tokenizer, model_name, emb_type, args.k,
+            args.output_dir, prefix, args.shard_size,
+        )
         del embeddings
 
     print("\nAll done!")

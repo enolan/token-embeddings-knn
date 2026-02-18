@@ -44,9 +44,10 @@ export function App() {
   const [showLegend, setShowLegend] = useState(false);
   const legendRef = useRef<HTMLDivElement>(null);
 
-  const { data, loading, error, search, getToken } = useModelData(
+  const { loading, error, search, getToken, neighborsLoading } = useModelData(
     modelId,
-    embeddingType
+    embeddingType,
+    selectedToken
   );
 
   // Sync URL with state
@@ -91,6 +92,9 @@ export function App() {
     setSearchPrefill(null);
   }, []);
 
+  // searchReady: tokens are loaded and search is available
+  const searchReady = !loading && !error;
+
   const handleModelChange = useCallback((id: string) => {
     if (selectedToken !== null) {
       const entry = getToken(selectedToken);
@@ -105,10 +109,10 @@ export function App() {
     setEmbeddingType((prev) => (types.includes(prev) ? prev : types[0]));
   }, [selectedToken, getToken]);
 
-  // Resolve pending token string after model switch — only fires when data changes
+  // Resolve pending token string after model switch — fires when search becomes available
   useEffect(() => {
     const pending = pendingTokenStr.current;
-    if (!pending || !data) return;
+    if (!pending || !searchReady) return;
     pendingTokenStr.current = null;
     const results = search(pending);
     const exact = results.find((r) => r.text === pending);
@@ -117,7 +121,7 @@ export function App() {
     } else {
       setSearchPrefill(pending);
     }
-  }, [data, search, navigate]);
+  }, [searchReady, search, navigate]);
 
   const token = selectedToken !== null ? getToken(selectedToken) : undefined;
 
@@ -168,7 +172,7 @@ export function App() {
       )}
       {error && <div className="status error">Error: {error}</div>}
 
-      {data && (
+      {searchReady && (
         <>
           <TokenSearch onSelect={navigate} search={search} prefillQuery={searchPrefill} />
           {token && selectedToken !== null && (
@@ -177,6 +181,7 @@ export function App() {
               token={token}
               getToken={getToken}
               onNavigate={navigate}
+              neighborsLoading={neighborsLoading}
             />
           )}
         </>

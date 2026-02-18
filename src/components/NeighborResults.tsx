@@ -7,6 +7,7 @@ interface Props {
   token: TokenEntry;
   getToken: (id: number) => TokenEntry | undefined;
   onNavigate: (tokenId: number) => void;
+  neighborsLoading: boolean;
 }
 
 export function NeighborResults({
@@ -14,6 +15,7 @@ export function NeighborResults({
   token,
   getToken,
   onNavigate,
+  neighborsLoading,
 }: Props) {
   const [hideDuplicates, setHideDuplicates] = useState(false);
 
@@ -46,53 +48,65 @@ export function NeighborResults({
         <span className="token-text">{visualizeToken(token.s)}</span>
         <span className="token-id">#{tokenId}</span>
       </div>
-      <label className="dedup-checkbox">
-        <input
-          type="checkbox"
-          checked={hideDuplicates}
-          onChange={(e) => setHideDuplicates(e.target.checked)}
-        />
-        Hide near-duplicates
-      </label>
-      <table className="neighbor-table">
-        <thead>
-          <tr>
-            <th>Rank</th>
-            <th>Token</th>
-            <th>ID</th>
-            <th>Similarity</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredNeighbors.map(([neighborId, similarity], i) => {
-            const neighbor = getToken(neighborId);
-            const barWidth = 15 + ((similarity - minSim) / range) * 85;
-            return (
-              <tr
-                key={neighborId}
-                className="neighbor-row"
-                onClick={() => onNavigate(neighborId)}
-                style={{ animationDelay: `${i * 0.025}s` }}
-              >
-                <td className="rank">{i + 1}</td>
-                <td className="token-text">
-                  {neighbor ? visualizeToken(neighbor.s) : "?"}
-                </td>
-                <td className="token-id">#{neighborId}</td>
-                <td className="similarity-cell">
-                  <span
-                    className="similarity-bar"
-                    style={{ width: `${barWidth}%` }}
-                  />
-                  <span className="similarity-value">
-                    {similarity.toFixed(4)}
-                  </span>
-                </td>
+      {neighborsLoading && token.n.length === 0 ? (
+        <div className="loading-skeleton">
+          <div className="skeleton-bar skeleton-row" />
+          <div className="skeleton-bar skeleton-row" />
+          <div className="skeleton-bar skeleton-row" />
+          <div className="skeleton-bar skeleton-row" />
+          <div className="skeleton-bar skeleton-row" />
+        </div>
+      ) : (
+        <>
+          <label className="dedup-checkbox">
+            <input
+              type="checkbox"
+              checked={hideDuplicates}
+              onChange={(e) => setHideDuplicates(e.target.checked)}
+            />
+            Hide near-duplicates
+          </label>
+          <table className="neighbor-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Token</th>
+                <th>ID</th>
+                <th>Similarity</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {filteredNeighbors.map(([neighborId, similarity], i) => {
+                const neighbor = getToken(neighborId);
+                const barWidth = 15 + ((similarity - minSim) / range) * 85;
+                return (
+                  <tr
+                    key={neighborId}
+                    className="neighbor-row"
+                    onClick={() => onNavigate(neighborId)}
+                    style={{ animationDelay: `${i * 0.025}s` }}
+                  >
+                    <td className="rank">{i + 1}</td>
+                    <td className="token-text">
+                      {neighbor ? visualizeToken(neighbor.s) : "?"}
+                    </td>
+                    <td className="token-id">#{neighborId}</td>
+                    <td className="similarity-cell">
+                      <span
+                        className="similarity-bar"
+                        style={{ width: `${barWidth}%` }}
+                      />
+                      <span className="similarity-value">
+                        {similarity.toFixed(4)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
+      )}
     </div>
   );
 }

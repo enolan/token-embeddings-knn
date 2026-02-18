@@ -11,4 +11,5 @@ dependencies = [
     "faiss-gpu-cu12",
     "numpy",
     "tqdm",
+    "brotli",
 ]

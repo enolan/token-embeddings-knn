@@ -16,3 +16,18 @@ export interface SearchResult {
   id: number;
   text: string;
 }
+
+export interface ShardManifest {
+  model: string;
+  k: number;
+  metric: string;
+  vocabSize: number;
+  shardSize: number;
+  numShards: number;
+}
+
+/** Flat array where index = token ID */
+export type TokenStrings = string[];
+
+/** Array of neighbor-lists. Token ID = shardIndex * shardSize + arrayIndex */
+export type KnnShard = [number, number][][];

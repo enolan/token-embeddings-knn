@@ -1,102 +1,130 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import brotliPromise from "brotli-dec-wasm";
-import type { ModelData, SearchResult, TokenEntry } from "../types";
+import type { ShardManifest, KnnShard, SearchResult, TokenEntry } from "../types";
 
 export type EmbeddingType = "input" | "output";
 
-const MODEL_FILES: Record<string, Partial<Record<EmbeddingType, string>>> = {
+/** URL prefix for each model/embedding pair (without file suffix) */
+const MODEL_PREFIXES: Record<string, Partial<Record<EmbeddingType, string>>> = {
   "qwen3-30b-a3b": {
-    input: "/data/qwen3-30b-a3b-input.json.br",
-    output: "/data/qwen3-30b-a3b-output.json.br",
+    input: "/data/qwen3-30b-a3b-input",
+    output: "/data/qwen3-30b-a3b-output",
   },
   "llama-3.1-8b": {
-    input: "/data/llama-3.1-8b-input.json.br",
-    output: "/data/llama-3.1-8b-output.json.br",
+    input: "/data/llama-3.1-8b-input",
+    output: "/data/llama-3.1-8b-output",
   },
   "gemma-3-4b": {
-    input: "/data/gemma-3-4b-input.json.br",
+    input: "/data/gemma-3-4b-input",
   },
 };
 
 export function availableModels(): string[] {
-  return Object.keys(MODEL_FILES);
+  return Object.keys(MODEL_PREFIXES);
 }
 
 export function availableEmbeddingTypes(modelId: string): EmbeddingType[] {
-  const files = MODEL_FILES[modelId];
+  const files = MODEL_PREFIXES[modelId];
   if (!files) return ["input"];
-  return (Object.keys(files) as EmbeddingType[]);
+  return Object.keys(files) as EmbeddingType[];
 }
 
 interface UseModelDataReturn {
-  data: ModelData | null;
   loading: boolean;
   error: string | null;
   search: (query: string, limit?: number) => SearchResult[];
   getToken: (id: number) => TokenEntry | undefined;
+  neighborsLoading: boolean;
+}
+
+async function fetchAndDecompress<T>(url: string): Promise<T> {
+  const [resp, brotli] = await Promise.all([fetch(url), brotliPromise]);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
+  const bytes = new Uint8Array(await resp.arrayBuffer());
+  // If the server set Content-Encoding: br, the browser already
+  // decompressed and we have raw JSON (starts with '[' or '{'). Otherwise
+  // we have raw brotli bytes that need manual decompression.
+  const firstByte = bytes[0];
+  const json =
+    firstByte === 0x7b || firstByte === 0x5b
+      ? new TextDecoder().decode(bytes)
+      : new TextDecoder().decode(brotli.decompress(bytes));
+  return JSON.parse(json);
 }
 
 export function useModelData(
   modelId: string,
-  embeddingType: EmbeddingType
+  embeddingType: EmbeddingType,
+  selectedToken: number | null
 ): UseModelDataReturn {
-  const [data, setData] = useState<ModelData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Index: lowercase token string → token ids, built once on load
-  const searchIndex = useRef<Map<string, number[]>>(new Map());
+  const [tokenStrings, setTokenStrings] = useState<string[] | null>(null);
+  const [manifest, setManifest] = useState<ShardManifest | null>(null);
+  const [neighborsLoading, setNeighborsLoading] = useState(false);
+  // Incremented when a shard loads, to trigger re-renders for getToken/search consumers
+  const [, setShardVersion] = useState(0);
 
+  const searchIndex = useRef<Map<string, number[]>>(new Map());
+  const shardCache = useRef<Map<number, KnnShard>>(new Map());
+  const prefixRef = useRef<string | null>(null);
+
+  // Phase 1: Load manifest + tokens on model/embedding switch
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setData(null);
+    setTokenStrings(null);
+    setManifest(null);
+    setNeighborsLoading(false);
     searchIndex.current = new Map();
+    shardCache.current = new Map();
+    setShardVersion(0);
 
-    const files = MODEL_FILES[modelId];
+    const files = MODEL_PREFIXES[modelId];
     if (!files) {
       setError(`Unknown model: ${modelId}`);
       setLoading(false);
       return;
     }
-    const url = files[embeddingType];
-    if (!url) {
+    const prefix = files[embeddingType];
+    if (!prefix) {
       setError(`${modelId} does not have ${embeddingType} embeddings (tied weights)`);
       setLoading(false);
       return;
     }
+    prefixRef.current = prefix;
 
     (async () => {
       try {
-        const [resp, brotli] = await Promise.all([fetch(url), brotliPromise]);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status} fetching ${url}`);
-
+        // Fetch manifest first (small, uncompressed)
+        const manifestData = await fetchAndDecompress<ShardManifest>(
+          `${prefix}-manifest.json`
+        );
         if (cancelled) return;
-        const bytes = new Uint8Array(await resp.arrayBuffer());
-        // If the server set Content-Encoding: br, the browser already
-        // decompressed and we have raw JSON (starts with '{'). Otherwise
-        // we have raw brotli bytes that need manual decompression.
-        const json =
-          bytes[0] === 0x7b
-            ? new TextDecoder().decode(bytes)
-            : new TextDecoder().decode(brotli.decompress(bytes));
-        const parsed: ModelData = JSON.parse(json);
+
+        // Fetch tokens file
+        const tokens = await fetchAndDecompress<string[]>(
+          `${prefix}-tokens.json.br`
+        );
+        if (cancelled) return;
 
         // Build search index
         const idx = new Map<string, number[]>();
-        for (const [idStr, entry] of Object.entries(parsed.tokens)) {
-          const key = entry.s.toLowerCase();
+        for (let id = 0; id < tokens.length; id++) {
+          const key = tokens[id].toLowerCase();
           const ids = idx.get(key);
           if (ids) {
-            ids.push(Number(idStr));
+            ids.push(id);
           } else {
-            idx.set(key, [Number(idStr)]);
+            idx.set(key, [id]);
           }
         }
 
         if (cancelled) return;
         searchIndex.current = idx;
-        setData(parsed);
+        setManifest(manifestData);
+        setTokenStrings(tokens);
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : String(e));
@@ -111,18 +139,119 @@ export function useModelData(
     };
   }, [modelId, embeddingType]);
 
+  // Phase 2: Load shard for selected token
+  useEffect(() => {
+    if (!manifest || !tokenStrings || selectedToken === null) return;
+    if (selectedToken < 0 || selectedToken >= manifest.vocabSize) return;
+
+    const shardIndex = Math.floor(selectedToken / manifest.shardSize);
+    if (shardCache.current.has(shardIndex)) return;
+
+    const prefix = prefixRef.current;
+    if (!prefix) return;
+
+    let cancelled = false;
+    setNeighborsLoading(true);
+
+    (async () => {
+      try {
+        const shard = await fetchAndDecompress<KnnShard>(
+          `${prefix}-knn-${shardIndex}.json.br`
+        );
+        if (cancelled) return;
+        shardCache.current.set(shardIndex, shard);
+        setShardVersion((v) => v + 1);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      } finally {
+        if (!cancelled) setNeighborsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedToken, manifest, tokenStrings]);
+
+  // Phase 3: Background prefetch remaining shards
+  useEffect(() => {
+    if (!manifest || !tokenStrings) return;
+
+    const prefix = prefixRef.current;
+    if (!prefix) return;
+
+    let cancelled = false;
+    const cache = shardCache.current;
+
+    // Wait a moment before starting prefetch
+    const timeout = setTimeout(() => {
+      if (cancelled) return;
+
+      let shardQueue = Array.from(
+        { length: manifest.numShards },
+        (_, i) => i
+      ).filter((i) => !cache.has(i));
+
+      function prefetchNext() {
+        if (cancelled || shardQueue.length === 0) return;
+        const idx = shardQueue.shift()!;
+        // Skip if already loaded (might have been loaded by Phase 2)
+        if (cache.has(idx)) {
+          prefetchNext();
+          return;
+        }
+
+        if ("requestIdleCallback" in window) {
+          requestIdleCallback(() => {
+            if (cancelled) return;
+            fetchAndDecompress<KnnShard>(`${prefix}-knn-${idx}.json.br`)
+              .then((shard) => {
+                if (cancelled) return;
+                cache.set(idx, shard);
+                setShardVersion((v) => v + 1);
+                prefetchNext();
+              })
+              .catch(() => {
+                // Prefetch failures are non-critical
+                if (!cancelled) prefetchNext();
+              });
+          });
+        } else {
+          fetchAndDecompress<KnnShard>(`${prefix}-knn-${idx}.json.br`)
+            .then((shard) => {
+              if (cancelled) return;
+              cache.set(idx, shard);
+              setShardVersion((v) => v + 1);
+              prefetchNext();
+            })
+            .catch(() => {
+              if (!cancelled) prefetchNext();
+            });
+        }
+      }
+
+      prefetchNext();
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [manifest, tokenStrings]);
+
   const search = useCallback(
     (query: string, limit = 50): SearchResult[] => {
-      if (!data || !query) return [];
+      if (!tokenStrings || !query) return [];
       const lower = query.toLowerCase();
       const results: SearchResult[] = [];
 
       // Check if query is a numeric token ID
       if (/^\d+$/.test(query)) {
         const id = Number(query);
-        const entry = data.tokens[String(id)];
-        if (entry) {
-          results.push({ id, text: entry.s });
+        if (id >= 0 && id < tokenStrings.length) {
+          results.push({ id, text: tokenStrings[id] });
         }
       }
 
@@ -133,23 +262,29 @@ export function useModelData(
           for (const tokenId of tokenIds) {
             if (results.length >= limit) break;
             if (!results.some((r) => r.id === tokenId)) {
-              results.push({ id: tokenId, text: data.tokens[String(tokenId)].s });
+              results.push({ id: tokenId, text: tokenStrings[tokenId] });
             }
           }
         }
       }
       return results;
     },
-    [data]
+    [tokenStrings]
   );
 
   const getToken = useCallback(
     (id: number): TokenEntry | undefined => {
-      if (!data) return undefined;
-      return data.tokens[String(id)];
+      if (!tokenStrings || id < 0 || id >= tokenStrings.length) return undefined;
+      if (!manifest) return undefined;
+      const shardIndex = Math.floor(id / manifest.shardSize);
+      const shard = shardCache.current.get(shardIndex);
+      const neighbors = shard
+        ? shard[id - shardIndex * manifest.shardSize]
+        : [];
+      return { s: tokenStrings[id], n: neighbors };
     },
-    [data]
+    [tokenStrings, manifest]
   );
 
-  return { data, loading, error, search, getToken };
+  return { loading, error, search, getToken, neighborsLoading };
 }
