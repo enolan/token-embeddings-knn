@@ -1,5 +1,6 @@
+import { useMemo, useState } from "react";
 import type { TokenEntry } from "../types";
-import { visualizeToken } from "../util";
+import { normalizeToken, visualizeToken } from "../util";
 
 interface Props {
   tokenId: number;
@@ -14,7 +15,26 @@ export function NeighborResults({
   getToken,
   onNavigate,
 }: Props) {
-  const similarities = token.n.map(([, s]) => s);
+  const [hideDuplicates, setHideDuplicates] = useState(false);
+
+  const filteredNeighbors = useMemo(() => {
+    if (!hideDuplicates) return token.n;
+    const seen = new Map<string, number>();
+    // Seed with the selected token so neighbors that are near-duplicates of it get hidden too
+    seen.set(normalizeToken(token.s), -1);
+    const result: typeof token.n = [];
+    for (const entry of token.n) {
+      const neighbor = getToken(entry[0]);
+      const key = neighbor ? normalizeToken(neighbor.s) : String(entry[0]);
+      if (!seen.has(key)) {
+        seen.set(key, result.length);
+        result.push(entry);
+      }
+    }
+    return result;
+  }, [token.n, token.s, hideDuplicates, getToken]);
+
+  const similarities = filteredNeighbors.map(([, s]) => s);
   const maxSim = Math.max(...similarities);
   const minSim = Math.min(...similarities);
   const range = maxSim - minSim || 1;
@@ -26,6 +46,14 @@ export function NeighborResults({
         <span className="token-text">{visualizeToken(token.s)}</span>
         <span className="token-id">#{tokenId}</span>
       </div>
+      <label className="dedup-checkbox">
+        <input
+          type="checkbox"
+          checked={hideDuplicates}
+          onChange={(e) => setHideDuplicates(e.target.checked)}
+        />
+        Hide near-duplicates
+      </label>
       <table className="neighbor-table">
         <thead>
           <tr>
@@ -36,7 +64,7 @@ export function NeighborResults({
           </tr>
         </thead>
         <tbody>
-          {token.n.map(([neighborId, similarity], i) => {
+          {filteredNeighbors.map(([neighborId, similarity], i) => {
             const neighbor = getToken(neighborId);
             const barWidth = 15 + ((similarity - minSim) / range) * 85;
             return (

@@ -422,6 +422,50 @@ header h1 {
   font-size: 1.15rem;
 }
 
+/* ── Dedup checkbox ──────────────────────────────────────────── */
+
+.dedup-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.dedup-checkbox input[type="checkbox"] {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border: 1px solid var(--text-muted);
+  border-radius: 3px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.dedup-checkbox input[type="checkbox"]:checked {
+  background: var(--accent-active);
+  border-color: var(--accent-active);
+}
+
+.dedup-checkbox input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 /* ── Neighbor table ──────────────────────────────────────────── */
 
 .neighbor-results {
