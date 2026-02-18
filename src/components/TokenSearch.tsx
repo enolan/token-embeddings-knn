@@ -5,15 +5,23 @@ import { visualizeToken } from "../util";
 interface Props {
   onSelect: (tokenId: number) => void;
   search: (query: string, limit?: number) => SearchResult[];
+  prefillQuery?: string | null;
 }
 
-export function TokenSearch({ onSelect, search }: Props) {
+export function TokenSearch({ onSelect, search, prefillQuery }: Props) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    if (prefillQuery) {
+      setQuery(prefillQuery);
+      inputRef.current?.focus();
+    }
+  }, [prefillQuery]);
 
   useEffect(() => {
     if (query.length === 0) {

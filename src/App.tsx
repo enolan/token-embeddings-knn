@@ -39,6 +39,8 @@ export function App() {
   const [selectedToken, setSelectedToken] = useState<number | null>(
     initial.token
   );
+  const pendingTokenStr = useRef<string | null>(null);
+  const [searchPrefill, setSearchPrefill] = useState<string | null>(null);
   const [showLegend, setShowLegend] = useState(false);
   const legendRef = useRef<HTMLDivElement>(null);
 
@@ -86,14 +88,36 @@ export function App() {
     params.set("token", String(tokenId));
     window.history.pushState(null, "", `${window.location.pathname}?${params}`);
     setSelectedToken(tokenId);
+    setSearchPrefill(null);
   }, []);
 
   const handleModelChange = useCallback((id: string) => {
+    if (selectedToken !== null) {
+      const entry = getToken(selectedToken);
+      pendingTokenStr.current = entry ? entry.s : null;
+    } else {
+      pendingTokenStr.current = null;
+    }
+    setSearchPrefill(null);
     setModelId(id);
     setSelectedToken(null);
     const types = availableEmbeddingTypes(id);
     setEmbeddingType((prev) => (types.includes(prev) ? prev : types[0]));
-  }, []);
+  }, [selectedToken, getToken]);
+
+  // Resolve pending token string after model switch — only fires when data changes
+  useEffect(() => {
+    const pending = pendingTokenStr.current;
+    if (!pending || !data) return;
+    pendingTokenStr.current = null;
+    const results = search(pending);
+    const exact = results.find((r) => r.text === pending);
+    if (exact) {
+      navigate(exact.id);
+    } else {
+      setSearchPrefill(pending);
+    }
+  }, [data, search, navigate]);
 
   const token = selectedToken !== null ? getToken(selectedToken) : undefined;
 
@@ -146,7 +170,7 @@ export function App() {
 
       {data && (
         <>
-          <TokenSearch onSelect={navigate} search={search} />
+          <TokenSearch onSelect={navigate} search={search} prefillQuery={searchPrefill} />
           {token && selectedToken !== null && (
             <NeighborResults
               tokenId={selectedToken}
