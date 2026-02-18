@@ -18,16 +18,30 @@ Single-page React 19 + TypeScript app (Vite 7) for exploring K-nearest-neighbor 
 
 ### Data flow
 
-1. `useModelData` hook fetches `/data/{model}-{type}.json.gz` from `public/data/`, decompresses (browser-transparent or manual `DecompressionStream`), parses JSON
-2. Builds an in-memory `Map<string, number>` search index (lowercased token string → token ID) in a `useRef`
-3. Exposes `search()`, `getToken()`, `loading`, `error` to `App.tsx`
-4. `App.tsx` owns all state (`modelId`, `embeddingType`, `selectedToken`) and syncs it bidirectionally with URL query params via `replaceState`/`pushState`/`popstate`
+1. `useModelData` hook fetches a manifest, then a tokens file, then KNN shards on demand from `public/data/`
+2. Data is split into three file types per model/embedding pair:
+   - `{prefix}-manifest.json` — metadata (vocabSize, shardSize, numShards, k)
+   - `{prefix}-tokens.json.br` — flat array of token strings (brotli-compressed)
+   - `{prefix}-knn-{i}.json.br` — neighbor lists for a chunk of tokens (brotli-compressed, ~16K tokens each)
+3. Tokens load first so search is interactive immediately; KNN shards load on demand when a token is selected, with background prefetch for the rest
+4. Builds an in-memory `Map<string, number[]>` search index (lowercased token string → token IDs) in a `useRef`
+5. Exposes `search()`, `getToken()`, `loading`, `neighborsLoading`, `error` to `App.tsx`
+6. `App.tsx` owns all state (`modelId`, `embeddingType`, `selectedToken`) and syncs it bidirectionally with URL query params via `replaceState`/`pushState`/`popstate`
 
-### Adding a new model
+### Generating data
 
-1. Run `build_data/compute_knn.py` to generate `{slug}-{type}.json.gz` files (requires GPU, uses FAISS)
-2. Place the `.json.gz` files in `public/data/`
-3. Add the model to `MODEL_FILES` in `src/hooks/useModelData.ts`
+Requires a GPU. All model IDs, slugs, and parameters are defined in the script:
+
+```bash
+cd build_data
+./regenerate_all.sh
+```
+
+To add a new model, add it to `regenerate_all.sh` and to `MODEL_PREFIXES` in `src/hooks/useModelData.ts`.
+
+### Python / uv
+
+Always use `uv run` to run Python scripts in `build_data/` — never use the system Python or `uv pip`. The `uv run` command automatically uses the project's virtualenv and dependencies from `pyproject.toml`.
 
 ### Design system
 
