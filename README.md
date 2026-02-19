@@ -20,11 +20,11 @@ bun run deploy    # Build and deploy to Cloudflare Pages
 
 ## Generating data
 
-KNN data is precomputed with FAISS and stored as gzipped JSON in `public/data/` (gitignored due to size). To regenerate:
+KNN data is precomputed with FAISS and stored as sharded brotli-compressed JSON in `public/data/` (gitignored due to size). To regenerate all models:
 
 ```bash
 cd build_data
-uv run compute_knn.py
+./regenerate_all.sh
 ```
 
-Requires a GPU.
+Requires a GPU. Model IDs, slugs, and parameters (k, shard size) are defined in `regenerate_all.sh`.
