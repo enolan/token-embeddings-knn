@@ -18,9 +18,9 @@
   --accent-glow: rgba(77, 142, 255, 0.12);
   --accent-token-dim: rgba(240, 184, 102, 0.08);
   --accent-similarity-dim: rgba(142, 164, 204, 0.10);
-  --font-display: 'Syne', sans-serif;
-  --font-body: 'DM Sans', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-display: 'Syne', 'Noto Sans SC', 'Noto Sans Arabic', sans-serif;
+  --font-body: 'DM Sans', 'Noto Sans SC', 'Noto Sans Arabic', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Noto Sans SC', 'Noto Sans Arabic', 'Noto Color Emoji', 'Fira Code', monospace;
   --radius: 8px;
   --radius-sm: 6px;
 }
