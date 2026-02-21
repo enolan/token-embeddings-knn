@@ -5,3 +5,4 @@ public/data/
 __pycache__/
 .venv/
 .vite/
+.wrangler/
