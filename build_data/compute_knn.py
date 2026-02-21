@@ -88,6 +88,7 @@ def compute_and_write(
     output_dir: str,
     prefix: str,
     shard_size: int,
+    use_gpu: bool = True,
 ):
     vocab_size, dim = embeddings.shape
 
@@ -98,11 +99,17 @@ def compute_and_write(
     embeddings_normalized = (embeddings / norms).astype(np.float32)
     del embeddings
 
-    # Build GPU FAISS index (inner product on normalized vectors = cosine similarity)
-    print("Building FAISS GPU index...")
-    res = faiss.StandardGpuResources()
+    # Build FAISS index (inner product on normalized vectors = cosine similarity)
     cpu_index = faiss.IndexFlatIP(dim)
-    index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
+
+    if use_gpu:
+        print("Building FAISS GPU index...")
+        res = faiss.StandardGpuResources()
+        index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
+    else:
+        print("Building FAISS CPU index...")
+        index = cpu_index
+
     index.add(embeddings_normalized)
 
     # Search in batches to show progress
@@ -224,6 +231,11 @@ def main():
         default=None,
         help="Override output filename slug (default: lowercased model name)",
     )
+    parser.add_argument(
+        "--cpu",
+        action="store_true",
+        help="Use CPU instead of GPU for FAISS",
+    )
     args = parser.parse_args()
 
     model_name = args.model.split("/")[-1]
@@ -255,6 +267,7 @@ def main():
         compute_and_write(
             embeddings, tokenizer, model_name, emb_type, args.k,
             args.output_dir, prefix, args.shard_size,
+            use_gpu=not args.cpu,
         )
         del embeddings
 

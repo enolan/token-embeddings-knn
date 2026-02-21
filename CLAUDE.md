@@ -30,7 +30,7 @@ Single-page React 19 + TypeScript app (Vite 7) for exploring K-nearest-neighbor 
 
 ### Generating data
 
-Requires a GPU. All model IDs, slugs, and parameters are defined in the script:
+Requires a GPU (or pass `--cpu` to `compute_knn.py`). All model IDs, slugs, and parameters are defined in the script:
 
 ```bash
 cd build_data
