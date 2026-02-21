@@ -3,8 +3,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview",
-    "deploy": "bun run build && bunx wrangler pages deploy dist/ --branch main"
+    "preview": "bunx wrangler pages dev dist/",
+    "deploy": "bun run build && bunx wrangler pages deploy"
   },
   "dependencies": {
     "brotli-dec-wasm": "^2.3.1",

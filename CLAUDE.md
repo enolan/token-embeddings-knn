@@ -7,10 +7,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 bun run dev       # Start Vite dev server
 bun run build     # Type-check (tsc) then bundle (vite build)
-bun run preview   # Serve production build locally
+bun run preview   # Serve production build locally (wrangler pages dev, runs Functions)
+bun run deploy    # Build + deploy to Cloudflare Pages (production)
 ```
 
-No test framework is configured. `tsc --noEmit` is the primary correctness check.
+Canary deploys: `bun run build && bunx wrangler pages deploy dist/ --branch canary`
+
+Type-checking the Cloudflare Functions (separate tsconfig): `tsc --noEmit -p functions/tsconfig.json`
+
+No test framework is configured. `tsc --noEmit` is the primary correctness check (run both the root and `functions/` tsconfigs).
 
 ## Architecture
 
@@ -37,7 +42,7 @@ cd build_data
 ./regenerate_all.sh
 ```
 
-To add a new model, add it to `regenerate_all.sh` and to `MODEL_PREFIXES` in `src/hooks/useModelData.ts`.
+To add a new model, add it to `regenerate_all.sh`, `MODEL_PREFIXES` in `src/hooks/useModelData.ts`, and the duplicated `MODEL_PREFIXES`/`MODEL_DISPLAY_NAMES` in `functions/og.ts` and `functions/_middleware.ts` (marked with "keep in sync" comments).
 
 ### Python / uv
 
@@ -46,6 +51,14 @@ Always use `uv run` to run Python scripts in `build_data/` — never use the sys
 ### Design system
 
 CSS variables defined in `:root` in `App.css`. Fonts: Syne (display), DM Sans (body), JetBrains Mono (code/tokens), loaded from Google Fonts in `index.html`. Token text uses amber (`--accent-token`), similarity scores use slate blue (`--accent-similarity`).
+
+### Hosting & OpenGraph
+
+Deployed on Cloudflare Pages. Configuration in `wrangler.toml`.
+
+- `functions/_middleware.ts` — HTMLRewriter middleware that rewrites OG meta tags (title, description, image, url) when the URL has `?model=` and `?token=` params
+- `functions/og.ts` — `/og` endpoint that generates dynamic OG images using workers-og/satori, loading token data from static assets via `env.ASSETS.fetch()`
+- Static fonts for OG rendering live in `public/fonts/`; non-Latin fallback fonts (CJK, Arabic, etc.) are loaded on-demand from Google Fonts
 
 ### Key patterns
 
